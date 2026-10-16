@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard IoT</title>
+    <!-- Incluimos la librería MQTT Paho desde CDN -->
+    <script src="https://cloudflare.com" type="text/javascript"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f4f4f9;
+            padding: 20px;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            font-size: 24px;
+        }
+        h2 {
+            color: #666;
+            margin-top: 20px;
+            font-weight: normal;
+            text-transform: uppercase;
+            font-size: 18px;
+        }
+        .value {
+            font-size: 48px;
+            font-weight: bold;
+            color: #ff5722;
+            margin: 10px 0 30px 0;
+        }
+        .btn-container {
+            display: flex;
+            justify-content: space-around;
+        }
+        button {
+            padding: 12px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .btn-abrir {
+            background-color: #4caf50;
+            color: white;
+        }
+        .btn-abrir:hover { background-color: #45a049; }
+        .btn-cerrar {
+            background-color: #f44336;
+            color: white;
+        }
+        .btn-cerrar:hover { background-color: #da190b; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>TP control con IOT (Panza) y (Rentero).</h1>
+    <h2>temperatura</h2>
+    <div class="value" id="temp-display">-- °C</div>
+    
+    <div class="btn-container">
+        <button class="btn-abrir" onclick="enviarComando('1')">abrir</button>
+        <button class="btn-cerrar" onclick="enviarComando('0')">cerrar</button>
+    </div>
+</div>
+
+<script>
+    // Configuración del broker MQTT (Mosquitto público)
+    // Usamos el puerto de WebSockets con SSL (8081) ya que los navegadores bloquean el puerto TCP 1883 directo.
+    const broker = "test.mosquitto.org";
+    const port = 8081; 
+    const clientId = "web_dashboard_" + Math.random().toString(16).substr(2, 8);
+
+    const client = new Paho.MQTT.Client(broker, port, clientId);
+
+    // Asignar manejadores de eventos
+    client.onConnectionLost = onConnectionLost;
+    client.onMessageArrived = onMessageArrived;
+
+    // Conectar al broker
+    client.connect({
+        onSuccess: onConnect,
+        useSSL: true
+    });
+
+    function onConnect() {
+        console.log("Conectado al broker MQTT");
+        // Suscribirse al tópico de temperatura
+        client.subscribe("etusiemens/panza/temperatura");
+    }
+
+    function onConnectionLost(responseObject) {
+        if (responseObject.errorCode !== 0) {
+            console.log("Conexión perdida: " + responseObject.errorMessage);
+        }
+    }
+
+    // Cuando llega un mensaje, actualiza el valor en el dashboard
+    function onMessageArrived(message) {
+        if (message.destinationName === "etusiemens/panza/temperatura") {
+            document.getElementById("temp-display").innerText = message.payloadString + " °C";
+        }
+    }
+
+    // Función para enviar '1' o '0' al tópico del servo
+    function enviarComando(valor) {
+        const message = new Paho.MQTT.Message(valor);
+        message.destinationName = "etusiemens/rentero/servo";
+        client.send(message);
+        console.log("Enviado: " + valor + " a etusiemens/rentero/servo");
+    }
+</script>
+
+</body>
+</html>
