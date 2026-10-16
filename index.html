@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard IoT</title>
-    <!-- Incluimos la librería MQTT Paho desde CDN -->
+    <!-- Librería MQTT Paho para navegadores -->
     <script src="https://cloudflare.com" type="text/javascript"></script>
     <style>
         body {
@@ -15,7 +15,7 @@
         }
         .container {
             max-width: 500px;
-            margin: 0 auto;
+            margin: 50px auto;
             background: white;
             padding: 30px;
             border-radius: 10px;
@@ -24,6 +24,7 @@
         h1 {
             color: #333;
             font-size: 24px;
+            margin-bottom: 30px;
         }
         h2 {
             color: #666;
@@ -31,25 +32,30 @@
             font-weight: normal;
             text-transform: uppercase;
             font-size: 18px;
+            letter-spacing: 1px;
         }
         .value {
-            font-size: 48px;
+            font-size: 54px;
             font-weight: bold;
             color: #ff5722;
-            margin: 10px 0 30px 0;
+            margin: 10px 0 40px 0;
         }
         .btn-container {
             display: flex;
             justify-content: space-around;
         }
         button {
-            padding: 12px 30px;
+            padding: 15px 40px;
             font-size: 18px;
             font-weight: bold;
             border: none;
             border-radius: 5px;
             cursor: pointer;
-            transition: background 0.3s;
+            text-transform: lowercase;
+            transition: background 0.3s, transform 0.1s;
+        }
+        button:active {
+            transform: scale(0.95);
         }
         .btn-abrir {
             background-color: #4caf50;
@@ -61,6 +67,11 @@
             color: white;
         }
         .btn-cerrar:hover { background-color: #da190b; }
+        .status {
+            font-size: 12px;
+            color: #999;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -74,54 +85,57 @@
         <button class="btn-abrir" onclick="enviarComando('1')">abrir</button>
         <button class="btn-cerrar" onclick="enviarComando('0')">cerrar</button>
     </div>
+    
+    <div class="status" id="status-text">Conectando al broker...</div>
 </div>
 
 <script>
-    // Configuración del broker MQTT (Mosquitto público)
-    // Usamos el puerto de WebSockets con SSL (8081) ya que los navegadores bloquean el puerto TCP 1883 directo.
+    // Configuración del broker Mosquitto indicado en tu PDF
     const broker = "test.mosquitto.org";
-    const port = 8081; 
-    const clientId = "web_dashboard_" + Math.random().toString(16).substr(2, 8);
+    const port = 8081; // Puerto WebSocket SSL para navegadores
+    const clientId = "dashboard_web_" + Math.random().toString(16).substr(2, 8);
 
     const client = new Paho.MQTT.Client(broker, port, clientId);
 
-    // Asignar manejadores de eventos
     client.onConnectionLost = onConnectionLost;
     client.onMessageArrived = onMessageArrived;
 
-    // Conectar al broker
     client.connect({
         onSuccess: onConnect,
         useSSL: true
     });
 
     function onConnect() {
-        console.log("Conectado al broker MQTT");
-        // Suscribirse al tópico de temperatura
+        document.getElementById("status-text").innerText = "Conectado a test.mosquitto.org";
+        document.getElementById("status-text").style.color = "#4caf50";
+        // Suscribirse estrictamente al tópico de temperatura de Panza
         client.subscribe("etusiemens/panza/temperatura");
     }
 
     function onConnectionLost(responseObject) {
-        if (responseObject.errorCode !== 0) {
-            console.log("Conexión perdida: " + responseObject.errorMessage);
-        }
+        document.getElementById("status-text").innerText = "Conexión perdida. Reintentando...";
+        document.getElementById("status-text").style.color = "#f44336";
     }
 
-    // Cuando llega un mensaje, actualiza el valor en el dashboard
+    // Recibe la temperatura del ESP32 y la actualiza en pantalla
     function onMessageArrived(message) {
         if (message.destinationName === "etusiemens/panza/temperatura") {
             document.getElementById("temp-display").innerText = message.payloadString + " °C";
         }
     }
 
-    // Función para enviar '1' o '0' al tópico del servo
+    // Envía '1' o '0' al tópico del servo de Rentero al presionar los botones
     function enviarComando(valor) {
-        const message = new Paho.MQTT.Message(valor);
-        message.destinationName = "etusiemens/rentero/servo";
-        client.send(message);
-        console.log("Enviado: " + valor + " a etusiemens/rentero/servo");
+        if (client.isConnected()) {
+            const message = new Paho.MQTT.Message(valor);
+            message.destinationName = "etusiemens/rentero/servo";
+            client.send(message);
+        } else {
+            alert("No hay conexión con el broker MQTT");
+        }
     }
 </script>
 
 </body>
 </html>
+
