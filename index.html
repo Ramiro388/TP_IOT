@@ -3,185 +3,109 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard IOT</title>
-    <!-- Librería oficial de Eclipse Paho MQTT vía CDN -->
-    <script src="https://cloudflare.com" type="text/javascript"></script>
+    <title>Panel Porton - HTTP Native</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f0f2f5;
+            background-color: #0d1b2a;
+            color: #e0e1dd;
+            font-family: system-ui, sans-serif;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
-            height: 100vh;
+            justify-content: center;
+            min-height: 100vh;
             margin: 0;
         }
-        .dashboard-card {
-            background-color: #ffffff;
+        .panel {
+            background: #1b263b;
+            padding: 25px;
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            padding: 30px;
-            text-align: center;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+            width: 90%;
             max-width: 400px;
-            width: 100%;
+            text-align: center;
         }
         h1 {
-            font-size: 20px;
-            color: #333333;
-            margin-bottom: 25px;
-            line-height: 1.4;
-        }
-        .label-temp {
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #666666;
+            font-size: 1.6rem;
             margin-bottom: 5px;
+            color: #e0e1dd;
         }
-        .value-temp {
-            font-size: 48px;
+        .sub {
+            color: #415a77;
+            font-size: 0.9rem;
+            margin-bottom: 25px;
+        }
+        .indicador {
+            background: #0d1b2a;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 8px;
             font-weight: bold;
-            color: #ff5722;
-            margin-bottom: 30px;
         }
-        .btn-container {
+        .libre { color: #778da9; }
+        .activo { color: #ff4d4d; }
+        .motor { color: #00b4d8; font-size: 1.2rem; }
+        .botones {
             display: flex;
-            justify-content: space-between;
-            gap: 15px;
+            gap: 10px;
+            margin-top: 25px;
         }
         button {
             flex: 1;
             padding: 12px;
-            font-size: 16px;
-            font-weight: bold;
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
+            font-weight: bold;
             cursor: pointer;
-            transition: background-color 0.2s, transform 0.1s;
+            transition: opacity 0.2s;
         }
-        button:active {
-            transform: scale(0.98);
-        }
-        .btn-abrir {
-            background-color: #4caf50;
-            color: white;
-        }
-        .btn-abrir:hover {
-            background-color: #43a047;
-        }
-        .btn-cerrar {
-            background-color: #f44336;
-            color: white;
-        }
-        .btn-cerrar:hover {
-            background-color: #e53935;
-        }
-        .status-con {
-            font-size: 12px;
-            margin-top: 20px;
-            color: #999999;
-            font-weight: 500;
-        }
+        .btn-g { background-color: #0077b6; color: white; }
+        .btn-p { background-color: #e63946; color: white; }
+        button:hover { opacity: 0.9; }
     </style>
 </head>
 <body>
 
-    <div class="dashboard-card">
-        <!-- TÍTULO EXACTO SOLICITADO -->
-        <h1>TP control con IOT (Panza) y (Rentero).</h1>
+    <div class="panel">
+        <h1>Portón Automatizado</h1>
+        <div class="sub">TP Control de Motor (Amparo Rodríguez)</div>
         
-        <!-- INDICADOR DE TEMPERATURA -->
-        <div class="label-temp">Temperatura</div>
-        <div id="temp-display" class="value-temp">-- °C</div>
+        <div class="indicador">FDC IZQ: <span id="fdcIzq" class="libre">LIBRE</span></div>
+        <div class="indicador">FDC DER: <span id="fdcDer" class="libre">LIBRE</span></div>
+        <div class="indicador motor">MOTOR: <span id="motorEstado">DETENIDO</span></div>
         
-        <!-- BOTONES DE ACCIÓN -->
-        <div class="btn-container">
-            <button class="btn-abrir" onclick="enviarComando('1')">Abrir</button>
-            <button class="btn-cerrar" onclick="enviarComando('0')">Cerrar</button>
+        <div class="botones">
+            <button class="btn-g" onclick="cmd(1)">ABRIR</button>
+            <button class="btn-p" onclick="cmd(0)">PARAR</button>
+            <button class="btn-g" onclick="cmd(2)">CERRAR</button>
         </div>
-
-        <!-- MONITOR DE ESTADO DE CONEXIÓN -->
-        <div id="status" class="status-con">Conectando al servidor...</div>
     </div>
 
     <script>
-        // CONFIGURACIÓN PARA EL BROKER MOSQUITTO (COMPATIBLE CON GITHUB PAGES)
-        const broker = "test.mosquitto.org";
-        const port = 8081; // Puerto seguro SSL para WebSockets en Mosquitto
-        const clientID = "WebDash_Mosq_" + Math.random().toString(16).substr(2, 8);
-
-        // Crear la instancia del cliente MQTT
-        const client = new Paho.MQTT.Client(broker, Number(port), clientID);
-
-        // Tópicos asignados para el TP
-        const topicTemperatura = "etusiemens/panza/temperatura";
-        const topicServo = "etusiemens/rentero/servo";
-
-        // Asignación de funciones de callback
-        client.onConnectionLost = onConnectionLost;
-        client.onMessageArrived = onMessageArrived;
-
-        // Opciones de conexión con SSL obligatorio para HTTPS
-        const connectOptions = {
-            useSSL: true, 
-            onSuccess: onConnect,
-            onFailure: onFailure,
-            keepAliveInterval: 30,
-            reconnect: true // Intenta reconectar automáticamente si se cae la red
-        };
-
-        // Conectar al servidor
-        client.connect(connectOptions);
-
-        // Se ejecuta cuando se conecta exitosamente al servidor Mosquitto
-        function onConnect() {
-            console.log("Conectado con éxito al Broker Mosquitto.");
-            document.getElementById("status").innerText = "Conectado a Mosquitto";
-            document.getElementById("status").style.color = "#4caf50";
-            
-            // Suscribirse al tópico de Panza para escuchar la temperatura del ESP32
-            client.subscribe(topicTemperatura);
+        function cmd(n) {
+            fetch("/control?cmd=" + n, { method: "POST" });
         }
 
-        // Se ejecuta si falla el intento de conexión inicial
-        function onFailure(error) {
-            console.log("Fallo en la conexión: " + error.errorMessage);
-            document.getElementById("status").innerText = "Error de conexión: " + error.errorMessage;
-            document.getElementById("status").style.color = "#f44336";
-        }
+        setInterval(function() {
+            fetch("/estado")
+                .then(res => res.json())
+                .then(data => {
+                    const fI = document.getElementById("fdcIzq");
+                    const fD = document.getElementById("fdcDer");
+                    const mE = document.getElementById("motorEstado");
 
-        // Se ejecuta si se pierde la conexión a mitad de ejecución
-        function onConnectionLost(responseObject) {
-            if (responseObject.errorCode !== 0) {
-                console.log("Conexión perdida: " + responseObject.errorMessage);
-                document.getElementById("status").innerText = "Conexión perdida. Reconectando...";
-                document.getElementById("status").style.color = "#ff9800";
-            }
-        }
+                    if (data.fdcI === 1) { fI.textContent = "ACTIVADO"; fI.className = "activo"; }
+                    else { fI.textContent = "LIBRE"; fI.className = "libre"; }
 
-        // Se ejecuta de manera automática cada vez que el ESP32 publica una temperatura
-        function onMessageArrived(message) {
-            console.log("Mensaje recibido en " + message.destinationName + ": " + message.payloadString);
-            
-            if (message.destinationName === topicTemperatura) {
-                // Modificar el texto de la pantalla con la temperatura actual
-                document.getElementById("temp-display").innerText = message.payloadString + " °C";
-            }
-        }
+                    if (data.fdcD === 1) { fD.textContent = "ACTIVADO"; fD.className = "activo"; }
+                    else { fD.textContent = "LIBRE"; fD.className = "libre"; }
 
-        // Publica el valor '1' (abrir) o '0' (cerrar) al tópico del servo de Rentero
-        function enviarComando(valor) {
-            if (client && client.isConnected()) {
-                const message = new Paho.MQTT.Message(valor);
-                message.destinationName = topicServo;
-                client.send(message);
-                console.log("Comando enviado al servo: " + valor);
-            } else {
-                alert("El dashboard no está conectado al servidor MQTT en este momento.");
-            }
-        }
+                    if (data.motor === 0) mE.textContent = "DETENIDO";
+                    else if (data.motor === 1) mE.textContent = "ABRIENDO";
+                    else if (data.motor === 2) mE.textContent = "CERRANDO";
+                    else if (data.motor === 3) mE.textContent = "BLOQUEADO";
+                });
+        }, 150);
     </script>
 </body>
 </html>
-
-
