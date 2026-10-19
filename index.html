@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard IOT</title>
-    <!-- LIBRERÍA OFICIAL DE ECLIPSE PAHO MQTT CORREGIDA -->
-    <script src="https://cloudflare.com" type="text/javascript"></script>
+    <!-- Cargamos la librería MQTT.js mediante CDN (Alternativa moderna a Paho) -->
+    <script src="https://unpkg.com" type="text/javascript"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -87,7 +87,7 @@
 <body>
 
     <div class="dashboard-card">
-        <!-- TÍTULO EXACTO SOLICITADO -->
+        <!-- TÍTULO EXACTO -->
         <h1>TP control con IOT (Panza) y (Rentero).</h1>
         
         <!-- INDICADOR DE TEMPERATURA -->
@@ -105,79 +105,69 @@
     </div>
 
     <script>
-        // CONFIGURACIÓN PARA EL BROKER MOSQUITTO (COMPATIBLE CON GITHUB PAGES)
-        const broker = "test.mosquitto.org";
-        const port = 8081; // Puerto seguro SSL para WebSockets en Mosquitto
-        const clientID = "WebDash_Mosq_" + Math.random().toString(16).substr(2, 8);
+        // CONFIGURACIÓN DE PARÁMETROS
+        const brokerUrl = "wss://test.mosquitto.org:8081"; // URL con protocolo Seguro 'wss' directo
+        const clientID = "WebDash_MQTTJS_" + Math.random().toString(16).substr(2, 8);
 
-        // Crear la instancia del cliente MQTT
-        const client = new Paho.MQTT.Client(broker, Number(port), clientID);
-
-        // Tópicos asignados para el TP
+        // Tópicos asignados
         const topicTemperatura = "etusiemens/panza/temperatura";
         const topicServo = "etusiemens/rentero/servo";
 
-        // Asignación de funciones de callback
-        client.onConnectionLost = onConnectionLost;
-        client.onMessageArrived = onMessageArrived;
+        // NUEVO MÉTODO DE INSTANCIACIÓN Y CONEXIÓN DIRECTA (Sin usar new Paho)
+        const client = mqtt.connect(brokerUrl, {
+            clientId: clientID,
+            clean: true,
+            connectTimeout: 4000,
+            reconnectPeriod: 1000,
+        });
 
-        // Opciones de conexión con SSL obligatorio para HTTPS en GitHub Pages
-        const connectOptions = {
-            useSSL: true, 
-            onSuccess: onConnect,
-            onFailure: onFailure,
-            keepAliveInterval: 30,
-            reconnect: true // Intenta reconectar automáticamente si se cae la red
-        };
-
-        // Conectar al servidor
-        client.connect(connectOptions);
-
-        // Se ejecuta cuando se conecta exitosamente al servidor Mosquitto
-        function onConnect() {
-            console.log("Conectado con éxito al Broker Mosquitto.");
-            document.getElementById("status").innerText = "Conectado a Mosquitto";
+        // Evento: Conexión exitosa
+        client.on('connect', () => {
+            console.log("Conectado con éxito al Broker Mosquitto vía MQTT.js.");
+            document.getElementById("status").innerText = "Conectado a Mosquitto (MQTT.js)";
             document.getElementById("status").style.color = "#4caf50";
             
-            // Suscribirse al tópico de Panza para escuchar la temperatura del ESP32
-            client.subscribe(topicTemperatura);
-        }
+            // Suscribirse al tópico de temperatura
+            client.subscribe(topicTemperatura, (err) => {
+                if (!err) {
+                    console.log("Suscripción exitosa a: " + topicTemperatura);
+                }
+            });
+        });
 
-        // Se ejecuta si falla el intento de conexión inicial
-        function onFailure(error) {
-            console.log("Fallo en la conexión: " + error.errorMessage);
-            document.getElementById("status").innerText = "Error de conexión: " + error.errorMessage;
-            document.getElementById("status").style.color = "#f44336";
-        }
-
-        // Se ejecuta si se pierde la conexión a mitad de ejecución
-        function onConnectionLost(responseObject) {
-            if (responseObject.errorCode !== 0) {
-                console.log("Conexión perdida: " + responseObject.errorMessage);
-                document.getElementById("status").innerText = "Conexión perdida. Reconectando...";
-                document.getElementById("status").style.color = "#ff9800";
-            }
-        }
-
-        // Se ejecuta de manera automática cada vez que el ESP32 publica una temperatura
-        function onMessageArrived(message) {
-            console.log("Mensaje recibido en " + message.destinationName + ": " + message.payloadString);
+        // Evento: Recepción de mensajes (Reemplaza a onMessageArrived)
+        client.on('message', (topic, payload) => {
+            const mensajeStr = payload.toString();
+            console.log("Mensaje recibido en [" + topic + "]: " + mensajeStr);
             
-            if (message.destinationName === topicTemperatura) {
-                // Modificar el texto de la pantalla con la temperatura actual
-                document.getElementById("temp-display").innerText = message.payloadString + " °C";
+            if (topic === topicTemperatura) {
+                // Actualiza el dashboard en tiempo real
+                document.getElementById("temp-display").innerText = mensajeStr + " °C";
             }
-        }
+        });
 
-        // Publica el valor '1' (abrir) o '0' (cerrar) al tópico del servo de Rentero
+        // Evento: Manejo de errores o desconexión
+        client.on('error', (err) => {
+            console.error("Error en MQTT.js: ", err);
+            document.getElementById("status").innerText = "Error: " + err.message;
+            document.getElementById("status").style.color = "#f44336";
+        });
+
+        client.on('offline', () => {
+            document.getElementById("status").innerText = "Desconectado. Intentando reconectar...";
+            document.getElementById("status").style.color = "#ff9800";
+        });
+
+        // FUNCIÓN DE LOS BOTONES PARA PUBLICAR COMANDOS
         function enviarComando(valor) {
-            if (client && client.isConnected()) {
-                const message = new Paho.MQTT.Message(valor);
-                message.destinationName = topicServo;
-                client.send(message);
-                console.log("Comando enviado al servo: " + valor);
+            if (client && client.connected) {
+                client.publish(topicServo, valor, { qos: 0 }, (err) => {
+                    if (!err) {
+                        console.log("Comando enviado al servo: " + valor);
+                    }
+                });
             } else {
-                alert("El dashboard no está conectado al servidor MQTT en este momento.");
+                alert("El dashboard no está conectado al servidor MQTT actualmente.");
             }
         }
     </script>
